@@ -1,59 +1,38 @@
-name: Deploy JSX Apps to Pages
+name: Deploy Pages
+
 on:
   push:
-    branches: ["main"]
+    branches: [main]
+  workflow_dispatch:
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: 20
-    - name: Install esbuild Preact
-      run: npm install -g esbuild preact htm @preact/signals-react
-    - name: Generate Bundled JSX Apps
-      run: |
-        # Root index
-        cat > index.html << 'EOF'
-        <!DOCTYPE html>
-        <html><head><title>JSX Apps</title><style>body{font-family:sans-serif;max-width:800px;margin:auto;padding:20px}</style></head>
-        <body><h1>Interactive JSX Apps</h1><ul>
-        $(ls *.jsx | sed 's/.jsx$//; s/^/<li><a href=\"&.html\">&<\/a><\/li>/')
-        </ul><p><small>Built: $(date)</small></p></body></html>
-        EOF
-        # Bundle each to standalone HTML
-        for src in *.jsx; do
-          app=${src%.jsx}
-          esbuild "$src" \
-            --bundle --format=esm --jsx-factory=html --jsx-fragment=Fragment \
-            --external:preact --external:htm \
-            --outfile="$app.js"
-          cat > "$app.html" << EOF
-        <!DOCTYPE html>
-        <html><head><title>$app</title>
-        <script type="module">
-        import {render,h} from 'https://unpkg.com/preact@latest?module';
-        import {setupScratch} from 'https://unpkg.com/htm@latest?module';
-        import * as App from './$app.js';
-        const html = setupScratch(h);
-        render(App.default?.() || html\`<h1>$app Loaded</h1>\`, document.body);
-        </script></head><body></body></html>
-        EOF
-        done
-    - uses: actions/upload-pages-artifact@v4
-      with:
-        path: '.'
-  deploy:
-    needs: build
+  build-and-deploy:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build static site
+        run: node build.mjs
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
       - id: deployment
         uses: actions/deploy-pages@v4
