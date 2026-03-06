@@ -14,46 +14,40 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: 20
-        cache: 'npm'
-    - name: Install esbuild & Preact
-      run: npm install esbuild preact htm @preact/signals-react --no-save
-    - name: Generate index.html & Bundled Apps
+    - name: Install esbuild Preact
+      run: npm install -g esbuild preact htm @preact/signals-react
+    - name: Generate Bundled JSX Apps
       run: |
         # Root index
         cat > index.html << 'EOF'
         <!DOCTYPE html>
-        <html>
-        <head><title>JSX Apps</title><style>body{font-family:sans-serif;max-width:800px;margin:auto;padding:20px}</style></head>
-        <body>
-        <h1>Interactive JSX Apps (Auto-built)</h1>
-        <ul>
-        $(for f in *.jsx; do echo "<li><strong><a href=\"${f%.jsx}.html\">$f</a></strong> - Click to run app</li>"; done)
-        </ul>
-        <p><small>Built: $(date)</small></p>
-        </body>
-        </html>
+        <html><head><title>JSX Apps</title><style>body{font-family:sans-serif;max-width:800px;margin:auto;padding:20px}</style></head>
+        <body><h1>Interactive JSX Apps</h1><ul>
+        $(ls *.jsx | sed 's/.jsx$//; s/^/<li><a href=\"&.html\">&<\/a><\/li>/')
+        </ul><p><small>Built: $(date)</small></p></body></html>
         EOF
-        # Bundle each JSX to HTML
+        # Bundle each to standalone HTML
         for src in *.jsx; do
-          app=\${src%.jsx}
-          cat > "\${app}.html" << EOF
+          app=${src%.jsx}
+          esbuild "$src" \
+            --bundle --format=esm --jsx-factory=html --jsx-fragment=Fragment \
+            --external:preact --external:htm \
+            --outfile="$app.js"
+          cat > "$app.html" << EOF
         <!DOCTYPE html>
-        <html>
-        <head><title>$app</title>
+        <html><head><title>$app</title>
         <script type="module">
-        import { render, h } from 'https://unpkg.com/preact@latest?module';
-        import { setupScratch, Fragment } from 'https://unpkg.com/htm@latest?module';
-        const html = setupScratch(h, { Fragment });
-        // Your app code below (transpiled)
-        $(esbuild "\$src" --bundle --format=esm --jsx-factory=html --jsx-fragment=Fragment --external:preact --external:htm --outfile=/dev/stdout)
-        render(html\`<h1>Loading $app...</h1>\`, document.body);
-        </script>
-        </head><body></body></html>
+        import {render,h} from 'https://unpkg.com/preact@latest?module';
+        import {setupScratch} from 'https://unpkg.com/htm@latest?module';
+        import * as App from './$app.js';
+        const html = setupScratch(h);
+        render(App.default?.() || html\`<h1>$app Loaded</h1>\`, document.body);
+        </script></head><body></body></html>
         EOF
         done
     - uses: actions/upload-pages-artifact@v4
       with:
-        path: .
+        path: '.'
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -61,5 +55,5 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-    - id: deployment
-      uses: actions/deploy-pages@v4
+      - id: deployment
+        uses: actions/deploy-pages@v4
