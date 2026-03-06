@@ -2,29 +2,43 @@ name: Deploy to Pages
 on:
   push:
     branches: ["main"]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Generate Directory Listings
+    - name: Generate Root Index
+      run: |
+        cat > index.html << EOF
+        <!DOCTYPE html>
+        <html>
+        <head><title>JSX Pages</title><meta charset="utf-8"></head>
+        <body style="font-family:sans-serif">
+        <h1>JSX Files (Auto-generated)</h1>
+        <ul>
+        $(for f in *.jsx; do echo "<li><a href=\"$f\">$f (view)</a> | <a href=\"https://raw.githubusercontent.com/${{ github.repository }}/main/$f\" target=\"_blank\">raw</a></li>"; done)
+        </ul>
+        <p><small>Updated: $(date)</small></p>
+        </body>
+        </html>
+        EOF
+    - name: Setup Subdir Listings (optional)
       uses: gacts/directory-listing@v1
       with:
         target: .
-    - name: Upload artifact
-      uses: actions/upload-pages-artifact@v4
+    - uses: actions/upload-pages-artifact@v4
       with:
         path: .
   deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
     steps:
-    - name: Deploy
-      id: deployment
+    - id: deployment
       uses: actions/deploy-pages@v4
