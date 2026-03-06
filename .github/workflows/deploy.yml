@@ -1,4 +1,4 @@
-name: Deploy to Pages
+name: Deploy JSX Apps to Pages
 on:
   push:
     branches: ["main"]
@@ -11,41 +11,55 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Generate Root Index
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+    - name: Install esbuild & Preact
+      run: npm install esbuild preact htm @preact/signals-react --no-save
+    - name: Generate index.html & Bundled Apps
       run: |
-        cat > index.html << EOF
+        # Root index
+        cat > index.html << 'EOF'
         <!DOCTYPE html>
         <html>
-        <head>
-        <title>JSX Pages</title>
-        <meta charset="utf-8">
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-        <script>hljs.highlightAll();</script>
-        </head>
-        <body style="font-family:sans-serif; max-width:1200px; margin:auto; padding:20px">
-        <h1>JSX Files (Auto-generated)</h1>
-        $(for f in *.jsx; do
-          echo "<h2><a href=\"#\$f\">\$f</a> | <a href=\"https://raw.githubusercontent.com/${{ github.repository }}/main/\$f\" target=\"_blank\">raw</a></h2>
-          <pre><code class=\"language-jsx\">$(cat "\$f" | sed 's/\\/\\\\/g; s/\"/\\\"/g')</code></pre><hr>";
-        done)
-        <p><small>Updated: $(date)</small></p>
+        <head><title>JSX Apps</title><style>body{font-family:sans-serif;max-width:800px;margin:auto;padding:20px}</style></head>
+        <body>
+        <h1>Interactive JSX Apps (Auto-built)</h1>
+        <ul>
+        $(for f in *.jsx; do echo "<li><strong><a href=\"${f%.jsx}.html\">$f</a></strong> - Click to run app</li>"; done)
+        </ul>
+        <p><small>Built: $(date)</small></p>
         </body>
         </html>
         EOF
-    - name: Setup Subdir Listings (optional)
-      uses: gacts/directory-listing@v1
-      with:
-        target: .
+        # Bundle each JSX to HTML
+        for src in *.jsx; do
+          app=\${src%.jsx}
+          cat > "\${app}.html" << EOF
+        <!DOCTYPE html>
+        <html>
+        <head><title>$app</title>
+        <script type="module">
+        import { render, h } from 'https://unpkg.com/preact@latest?module';
+        import { setupScratch, Fragment } from 'https://unpkg.com/htm@latest?module';
+        const html = setupScratch(h, { Fragment });
+        // Your app code below (transpiled)
+        $(esbuild "\$src" --bundle --format=esm --jsx-factory=html --jsx-fragment=Fragment --external:preact --external:htm --outfile=/dev/stdout)
+        render(html\`<h1>Loading $app...</h1>\`, document.body);
+        </script>
+        </head><body></body></html>
+        EOF
+        done
     - uses: actions/upload-pages-artifact@v4
       with:
         path: .
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
     steps:
     - id: deployment
       uses: actions/deploy-pages@v4
